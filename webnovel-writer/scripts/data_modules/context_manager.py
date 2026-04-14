@@ -81,7 +81,7 @@ class ContextManager:
         self.context_ranker = ContextRanker(self.config)
 
     def _is_snapshot_compatible(self, cached: Dict[str, Any], template: str) -> bool:
-        """判断快照是否可用于当前模板。"""
+        """判断快照是否可用于当前模板，并校验数据源是否过期。"""
         if not isinstance(cached, dict):
             return False
 
@@ -94,7 +94,66 @@ class ContextManager:
         if not isinstance(cached_template, str):
             return template == self.DEFAULT_TEMPLATE
 
-        return cached_template == template
+        if cached_template != template:
+            return False
+
+        # 校验依赖文件是否发生变化
+        if self.snapshot_manager.is_snapshot_stale(cached):
+            return False
+
+        return True
+
+    def _collect_snapshot_dependencies(self, chapter: int) -> Dict[str, Any]:
+        """收集快照依赖的核心文件指纹。"""
+        deps: Dict[str, Any] = {}
+        project_root = self.config.project_root
+
+        # 核心状态文件
+        state_path = self.config.state_file
+        fp = self.snapshot_manager.file_fingerprint(state_path)
+        if fp:
+            deps[str(state_path)] = fp
+
+        # 索引数据库
+        index_path = self.config.index_db
+        fp = self.snapshot_manager.file_fingerprint(index_path)
+        if fp:
+            deps[str(index_path)] = fp
+
+        # 本章大纲文件
+        try:
+            from chapter_outline_loader import _find_volume_outline_file
+            outline_path = _find_volume_outline_file(project_root, chapter)
+            if outline_path:
+                fp = self.snapshot_manager.file_fingerprint(outline_path)
+                if fp:
+                    deps[str(outline_path)] = fp
+        except Exception:
+            pass
+
+        # 前2章摘要文件
+        for prev_ch in range(max(1, chapter - 2), chapter):
+            summary_path = self.config.webnovel_dir / "summaries" / f"ch{prev_ch:04d}.md"
+            fp = self.snapshot_manager.file_fingerprint(summary_path)
+            if fp:
+                deps[str(summary_path)] = fp
+
+        # 偏好与记忆文件
+        for fname in ("preferences.json", "project_memory.json"):
+            fpath = self.config.webnovel_dir / fname
+            fp = self.snapshot_manager.file_fingerprint(fpath)
+            if fp:
+                deps[str(fpath)] = fp
+
+        # 题材参考文件
+        refs_dir = project_root / ".claude" / "references"
+        for fname in ("genre-profiles.md", "reading-power-taxonomy.md"):
+            fpath = refs_dir / fname
+            fp = self.snapshot_manager.file_fingerprint(fpath)
+            if fp:
+                deps[str(fpath)] = fp
+
+        return deps
 
     def build_context(
         self,
@@ -125,7 +184,10 @@ class ContextManager:
         assembled = self.assemble_context(pack, template=template, max_chars=max_chars)
 
         if save_snapshot:
-            meta = {"template": template}
+            meta = {
+                "template": template,
+                "dependencies": self._collect_snapshot_dependencies(chapter),
+            }
             self.snapshot_manager.save_snapshot(chapter, assembled, meta=meta)
 
         return assembled

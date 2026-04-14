@@ -47,6 +47,13 @@ GENRE_PROFILE_KEY_ALIASES: dict[str, str] = {
     "电竞": "esports",
     "直播文": "livestream",
     "克苏鲁": "cosmic-horror",
+    "军旅": "military",
+    "军旅文": "military",
+    "军事": "military",
+    "现实军事": "military",
+    "商战": "business",
+    "现实商业": "business",
+    "商业": "business",
 }
 
 

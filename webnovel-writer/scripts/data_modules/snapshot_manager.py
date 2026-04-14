@@ -51,6 +51,28 @@ class SnapshotManager:
     def _snapshot_lock_path(self, chapter: int) -> Path:
         return self._snapshot_path(chapter).with_suffix(".json.lock")
 
+    @staticmethod
+    def file_fingerprint(path: Path) -> Optional[Dict[str, Any]]:
+        """返回文件指纹（mtime 和 size），文件不存在时返回 None。"""
+        if not path.exists():
+            return None
+        stat = path.stat()
+        return {"mtime": stat.st_mtime, "size": stat.st_size}
+
+    def is_snapshot_stale(self, data: Dict[str, Any]) -> bool:
+        """校验快照依赖文件是否发生变化。"""
+        meta = data.get("meta") if isinstance(data, dict) else None
+        if not isinstance(meta, dict):
+            return False
+        dependencies = meta.get("dependencies")
+        if not isinstance(dependencies, dict):
+            return False
+        for path_str, saved_fp in dependencies.items():
+            current_fp = self.file_fingerprint(Path(path_str))
+            if current_fp is None or current_fp != saved_fp:
+                return True
+        return False
+
     def save_snapshot(self, chapter: int, payload: Dict[str, Any], meta: Optional[Dict[str, Any]] = None) -> Path:
         data: Dict[str, Any] = {
             "version": self.version,

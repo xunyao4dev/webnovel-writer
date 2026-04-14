@@ -271,3 +271,55 @@ def test_render_text_contains_rag_assist_section_when_hits_exist(tmp_path):
     assert "- 模式: auto" in text
     assert "[graph_hybrid]" in text
     assert "萧炎与药老" in text
+
+
+def test_rag_trigger_config_dynamic_by_genre():
+    scripts_dir = Path(__file__).resolve().parents[2]
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+
+    from extract_chapter_context import _get_rag_trigger_config, _build_rag_query
+
+    # 默认配置应包含通用关键词
+    default_cfg = _get_rag_trigger_config("")
+    assert "关系" in default_cfg["keywords"]
+
+    # 修仙题材应包含"境界"、"功法"等关键词
+    xianxia_cfg = _get_rag_trigger_config("修仙")
+    assert "境界" in xianxia_cfg["keywords"]
+    assert "功法" in xianxia_cfg["keywords"]
+
+    # 电竞题材应包含"比赛"、"BP"等关键词
+    esports_cfg = _get_rag_trigger_config("电竞")
+    assert "比赛" in esports_cfg["keywords"]
+    assert "BP" in esports_cfg["keywords"]
+
+    # 动态 topic 映射：修仙大纲含"功法"
+    query = _build_rag_query("主角获得神秘功法残卷", 5, 5, 40, genre="修仙")
+    assert "修炼体系与资源" in query
+
+    # 电竞大纲含"团战"
+    query = _build_rag_query("关键团战翻盘", 10, 5, 40, genre="电竞")
+    assert "比赛与战术" in query
+
+    # 军旅题材应包含"晋升"、"战备"等关键词
+    military_cfg = _get_rag_trigger_config("军旅")
+    assert "晋升" in military_cfg["keywords"]
+    assert "战备" in military_cfg["keywords"]
+
+    # 商战题材应包含"并购"、"资金链"等关键词
+    business_cfg = _get_rag_trigger_config("商战")
+    assert "并购" in business_cfg["keywords"]
+    assert "资金链" in business_cfg["keywords"]
+
+    # 动态 topic 映射：军旅大纲含"轮战"
+    query = _build_rag_query("全营动员准备两山轮战", 12, 5, 40, genre="军旅")
+    assert "军旅晋升与战备" in query
+
+    # 动态 topic 映射：商战大纲含"改制"
+    query = _build_rag_query("国企改制方案通过", 15, 5, 40, genre="商战")
+    assert "商业变革与资本运作" in query
+
+    # 无触发词时返回空
+    query = _build_rag_query("日常吃饭睡觉", 1, 5, 40, genre="修仙")
+    assert query == ""

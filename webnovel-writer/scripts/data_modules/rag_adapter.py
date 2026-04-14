@@ -518,15 +518,16 @@ class RAGAdapter:
     # ==================== BM25 索引 ====================
 
     def _tokenize(self, text: str) -> List[str]:
-        """简单分词（中文按字符，英文按单词）"""
-        # 中文字符
-        chinese = re.findall(r'[\u4e00-\u9fff]+', text)
-        chinese_chars = list("".join(chinese))
+        """简单分词（中文用 jieba，英文按单词）"""
+        import jieba
+
+        chinese_text = "".join(re.findall(r'[\u4e00-\u9fff]+', text))
+        chinese_tokens = list(jieba.cut(chinese_text))
 
         # 英文单词
         english = re.findall(r'[a-zA-Z]+', text.lower())
 
-        return chinese_chars + english
+        return chinese_tokens + english
 
     def _update_bm25_index(self, cursor, chunk_id: str, content: str):
         """更新 BM25 索引"""
@@ -554,6 +555,21 @@ class RAGAdapter:
             INSERT INTO doc_stats (chunk_id, doc_length)
             VALUES (?, ?)
         """, (chunk_id, doc_length))
+
+    def rebuild_bm25(self) -> Dict[str, int]:
+        """基于 vectors 表中现有 content，用当前分词器重建 BM25 索引。"""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM bm25_index")
+            cursor.execute("DELETE FROM doc_stats")
+
+            cursor.execute("SELECT chunk_id, content FROM vectors")
+            rows = cursor.fetchall()
+            for chunk_id, content in rows:
+                self._update_bm25_index(cursor, chunk_id, content or "")
+            conn.commit()
+
+        return {"rebuilt_chunks": len(rows), "status": "ok"}
 
     # ==================== 向量检索 ====================
 
@@ -1402,6 +1418,9 @@ def main():
     # 获取统计
     subparsers.add_parser("stats")
 
+    # 重建 BM25 索引
+    subparsers.add_parser("rebuild-bm25")
+
     # 写入索引
     index_parser = subparsers.add_parser("index-chapter")
     index_parser.add_argument("--chapter", type=int, required=True)
@@ -1477,6 +1496,20 @@ def main():
         scenes = load_json_arg(args.scenes)
         chunks = []
 
+        # 查找实际章节文件名（支持带标题格式）
+        chapter_file = None
+        if config:
+            try:
+                from chapter_paths import find_chapter_file
+
+                cf = find_chapter_file(config.project_root, args.chapter)
+                if cf:
+                    chapter_file = str(cf.relative_to(config.project_root))
+            except Exception:
+                pass
+        if not chapter_file:
+            chapter_file = f"正文/第{args.chapter:04d}章.md"
+
         # summary chunk
         summary_text = args.summary
         if not summary_text and config:
@@ -1509,7 +1542,7 @@ def main():
                     "chunk_type": "scene",
                     "parent_chunk_id": parent_chunk_id,
                     "chunk_id": chunk_id,
-                    "source_file": f"正文/第{args.chapter:04d}章.md#scene_{int(scene_index)}",
+                    "source_file": f"{chapter_file}#scene_{int(scene_index)}",
                 }
             )
 
@@ -1520,6 +1553,10 @@ def main():
             emit_success(result, message="indexed_with_warnings", chapter=args.chapter)
         else:
             emit_success(result, message="indexed", chapter=args.chapter)
+
+    elif args.command == "rebuild-bm25":
+        result = adapter.rebuild_bm25()
+        emit_success(result, message="bm25_rebuilt")
 
     elif args.command == "search":
         center_entities: List[str] | None = None

@@ -36,22 +36,299 @@ def _ensure_scripts_path():
         sys.path.insert(0, str(scripts_dir))
 
 
-_RAG_TRIGGER_KEYWORDS = (
-    "关系",
-    "恩怨",
-    "冲突",
-    "敌对",
-    "同盟",
-    "师徒",
-    "身份",
-    "线索",
-    "伏笔",
-    "回收",
-    "地点",
-    "势力",
-    "真相",
-    "来历",
-)
+def _get_profile_key(genre: str) -> str:
+    try:
+        from data_modules.genre_aliases import to_profile_key
+        return to_profile_key(genre)
+    except Exception:
+        return genre.strip().lower()
+
+
+# 题材化 RAG trigger 关键词配置
+_RAG_TRIGGER_PROFILES: Dict[str, Dict[str, Any]] = {
+    "default": {
+        "keywords": (
+            "关系", "恩怨", "冲突", "敌对", "同盟", "师徒", "身份",
+            "线索", "伏笔", "回收", "地点", "势力", "真相", "来历",
+        ),
+        "topics": [
+            (("关系", "师徒", "敌对", "同盟"), "人物关系与动机"),
+            (("地点", "势力"), "地点势力与场景约束"),
+            (("伏笔", "线索", "回收"), "伏笔与线索"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "shuangwen": {
+        "keywords": (
+            "系统", "任务", "奖励", "打脸", "装逼", "升级", "境界",
+            "功法", "丹药", "灵石", "势力", "敌对", "身份", "金手指",
+            "伏笔", "线索", "回收", "真相",
+        ),
+        "topics": [
+            (("系统", "任务", "奖励", "金手指"), "系统与金手指"),
+            (("境界", "功法", "丹药", "灵石", "升级"), "修炼与资源"),
+            (("打脸", "装逼", "身份"), "身份与爽点"),
+            (("势力", "敌对"), "势力与敌对"),
+            (("伏笔", "线索", "回收", "真相"), "伏笔与线索"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "xianxia": {
+        "keywords": (
+            "修仙", "境界", "突破", "功法", "丹药", "灵石", "法宝",
+            "宗门", "长老", "弟子", "秘境", "机缘", "渡劫", "飞升",
+            "敌对", "势力", "恩怨", "师徒", "身份", "伏笔", "线索",
+        ),
+        "topics": [
+            (("境界", "突破", "功法", "丹药", "灵石", "法宝"), "修炼体系与资源"),
+            (("宗门", "长老", "弟子", "秘境", "机缘"), "宗门与机缘"),
+            (("敌对", "势力", "恩怨", "师徒", "身份"), "人物关系与势力"),
+            (("伏笔", "线索", "渡劫", "飞升"), "长线伏笔与目标"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "romance": {
+        "keywords": (
+            "感情", "心动", "吃醋", "误会", "和解", "表白", "分手",
+            "重逢", "身份", "关系", "家族", "前任", "暗恋", "追求",
+            "伏笔", "真相", "来历",
+        ),
+        "topics": [
+            (("感情", "心动", "吃醋", "误会", "和解", "表白"), "感情线与情绪"),
+            (("身份", "关系", "家族", "前任", "暗恋", "追求"), "人物关系与身份"),
+            (("伏笔", "真相", "来历"), "伏笔与真相"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "mystery": {
+        "keywords": (
+            "凶手", "动机", "线索", "证据", "推理", "真相", "嫌疑",
+            "不在场证明", "目击", "指纹", "遗书", "密室", "伏笔",
+            "回收", "身份", "来历",
+        ),
+        "topics": [
+            (("凶手", "动机", "嫌疑", "不在场证明"), "案件与嫌疑人"),
+            (("线索", "证据", "推理", "目击", "指纹", "遗书", "密室"), "线索与推理"),
+            (("真相", "身份", "来历", "伏笔", "回收"), "真相与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "rules-mystery": {
+        "keywords": (
+            "规则", "污染", "异常", "调查", "收容", "理智", "代价",
+            "真相", "线索", "伏笔", "回收", "身份", "来历", "敌对",
+        ),
+        "topics": [
+            (("规则", "污染", "异常", "理智", "代价"), "规则与异常"),
+            (("调查", "收容", "线索", "真相"), "调查与真相"),
+            (("身份", "来历", "敌对", "伏笔", "回收"), "身份与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "urban-power": {
+        "keywords": (
+            "异能", "觉醒", "隐藏", "低调", "装逼", "打脸", "身份",
+            "掉马", "家族", "公司", "商业", "舆论", "敌对", "势力",
+            "伏笔", "线索", "真相",
+        ),
+        "topics": [
+            (("异能", "觉醒", "隐藏", "低调", "掉马"), "异能与身份"),
+            (("装逼", "打脸", "家族", "公司", "商业", "舆论"), "社会与商业"),
+            (("敌对", "势力", "伏笔", "线索", "真相"), "势力与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "zhihu-short": {
+        "keywords": (
+            "反转", "情绪", "冲突", "身份", "真相", "伏笔", "回收",
+            "关系", "恩怨", "来历", "选择", "代价",
+        ),
+        "topics": [
+            (("反转", "身份", "真相", "来历"), "反转与真相"),
+            (("情绪", "冲突", "关系", "恩怨"), "情绪与冲突"),
+            (("伏笔", "回收", "选择", "代价"), "伏笔与选择"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "substitute": {
+        "keywords": (
+            "替身", "虐心", "误会", "反转", "追妻", "火葬场", "身份",
+            "真相", "前任", "暗恋", "关系", "情绪", "伏笔", "回收",
+        ),
+        "topics": [
+            (("替身", "虐心", "误会", "追妻", "火葬场"), "情感主线"),
+            (("身份", "真相", "前任", "暗恋", "关系"), "身份与关系"),
+            (("情绪", "反转", "伏笔", "回收"), "情绪与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "esports": {
+        "keywords": (
+            "比赛", "战队", "英雄", "BP", "团战", "逆风", "翻盘",
+            "冠军", "积分", "排名", "舆论", "队友", "教练", "对手",
+            "战术", "操作", "伏笔", "线索",
+        ),
+        "topics": [
+            (("比赛", "战队", "英雄", "BP", "团战", "战术", "操作"), "比赛与战术"),
+            (("逆风", "翻盘", "冠军", "积分", "排名"), "赛事进程"),
+            (("舆论", "队友", "教练", "对手"), "团队与舆论"),
+            (("伏笔", "线索"), "伏笔与线索"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "livestream": {
+        "keywords": (
+            "直播", "流量", "榜单", "带货", "粉丝", "黑粉", "PK",
+            "平台", "签约", "舆论", "反转", "身份", "掉马", "敌对",
+            "伏笔", "线索", "真相",
+        ),
+        "topics": [
+            (("直播", "流量", "榜单", "带货", "PK", "粉丝", "黑粉"), "直播与流量"),
+            (("平台", "签约", "舆论", "反转"), "平台与舆论"),
+            (("身份", "掉马", "敌对", "伏笔", "线索", "真相"), "身份与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "cosmic-horror": {
+        "keywords": (
+            "克苏鲁", "污染", "理智", "疯狂", "古神", "仪式", "禁忌",
+            "调查", "真相", "代价", "规则", "异常", "身份", "来历",
+            "伏笔", "线索", "回收",
+        ),
+        "topics": [
+            (("克苏鲁", "污染", "理智", "疯狂", "古神", "仪式", "禁忌"), "恐怖与规则"),
+            (("调查", "真相", "代价", "异常"), "调查与真相"),
+            (("身份", "来历", "伏笔", "线索", "回收"), "身份与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "history-travel": {
+        "keywords": (
+            "穿越", "历史", "知识", "种田", "发家", "改革", "科举",
+            "朝堂", "战争", "身份", "来历", "势力", "敌对", "伏笔",
+            "线索", "真相",
+        ),
+        "topics": [
+            (("穿越", "历史", "知识", "种田", "发家", "改革", "科举"), "穿越与知识优势"),
+            (("朝堂", "战争", "势力", "敌对"), "朝堂与势力"),
+            (("身份", "来历", "伏笔", "线索", "真相"), "身份与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "military": {
+        "keywords": (
+            "军营", "晋升", "军衔", "派系", "训练", "战备", "轮战",
+            "情报网", "调查", "内鬼", "间谍", "转业", "退伍", "立功",
+            "评功", "战报", "档案", "政审", "敌对", "势力", "恩怨",
+            "师徒", "身份", "伏笔", "线索", "真相",
+        ),
+        "topics": [
+            (("军营", "晋升", "军衔", "派系", "训练", "战备", "轮战"), "军旅晋升与战备"),
+            (("情报网", "调查", "内鬼", "间谍", "转业", "退伍"), "情报与身份转折"),
+            (("立功", "评功", "战报", "档案", "政审"), "军功与体制规则"),
+            (("敌对", "势力", "恩怨", "师徒", "身份"), "人物关系与势力"),
+            (("伏笔", "线索", "真相"), "长线伏笔与真相"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "business": {
+        "keywords": (
+            "国企", "改制", "并购", "资金链", "上市", "合规", "审查",
+            "竞争对手", "市场份额", "供应链", "管理层", "裁员", "扭亏",
+            "盈利", "董事会", "股东", "谈判", "合同", "违约", "舆论",
+            "身份", "敌对", "势力", "伏笔", "线索", "真相",
+        ),
+        "topics": [
+            (("国企", "改制", "并购", "上市", "资金链"), "商业变革与资本运作"),
+            (("合规", "审查", "竞争对手", "市场份额", "供应链"), "竞争与合规博弈"),
+            (("管理层", "裁员", "扭亏", "盈利", "董事会", "股东"), "企业管理与决策"),
+            (("谈判", "合同", "违约", "舆论", "身份", "敌对", "势力"), "商战交锋与关系"),
+            (("伏笔", "线索", "真相"), "伏笔与真相"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+    "game-lit": {
+        "keywords": (
+            "游戏", "系统", "副本", "BOSS", "装备", "技能", "属性",
+            "升级", "公会", "队友", "NPC", "任务", "金手指", "敌对",
+            "伏笔", "线索", "真相",
+        ),
+        "topics": [
+            (("游戏", "系统", "副本", "BOSS", "装备", "技能", "属性", "升级"), "游戏与成长"),
+            (("公会", "队友", "NPC", "任务", "金手指"), "社交与系统"),
+            (("敌对", "伏笔", "线索", "真相"), "敌对与伏笔"),
+        ],
+        "fallback_topic": "剧情关键线索",
+    },
+}
+
+
+def _load_genre_from_state(project_root: Path) -> str:
+    """从 state.json 读取题材信息。"""
+    state_file = project_root / ".webnovel" / "state.json"
+    if not state_file.exists():
+        return ""
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+        project = state.get("project") or state.get("project_info") or {}
+        genre = str(project.get("genre") or "").strip()
+        return genre
+    except Exception:
+        return ""
+
+
+def _split_genre_keys(genre: str) -> List[str]:
+    """拆分复合题材，支持 A+B / A/B / A、B / A与B。"""
+    raw = re.sub(r"[＋/、]", "+", genre)
+    raw = raw.replace("与", "+")
+    return [p.strip() for p in raw.split("+") if p.strip()]
+
+
+def _get_rag_trigger_config(genre: str) -> Dict[str, Any]:
+    """根据题材获取 RAG trigger 配置，复合题材自动合并子配置。"""
+    if not genre:
+        return _RAG_TRIGGER_PROFILES["default"]
+
+    parts = _split_genre_keys(genre)
+    profile_keys = []
+    for part in parts:
+        key = _get_profile_key(part)
+        if key and key not in profile_keys:
+            profile_keys.append(key)
+
+    if not profile_keys:
+        return _RAG_TRIGGER_PROFILES["default"]
+
+    # 单题材直接返回
+    if len(profile_keys) == 1:
+        return _RAG_TRIGGER_PROFILES.get(profile_keys[0], _RAG_TRIGGER_PROFILES["default"])
+
+    # 复合题材：合并 keywords、topics，fallback_topic 取第一个非 default
+    merged_keywords: List[str] = []
+    merged_topics: List[Any] = []
+    fallback_topic = _RAG_TRIGGER_PROFILES["default"]["fallback_topic"]
+
+    for key in profile_keys:
+        cfg = _RAG_TRIGGER_PROFILES.get(key)
+        if not cfg:
+            continue
+        for kw in cfg.get("keywords", ()):
+            if kw not in merged_keywords:
+                merged_keywords.append(kw)
+        for topic in cfg.get("topics", []):
+            if topic not in merged_topics:
+                merged_topics.append(topic)
+        if fallback_topic == _RAG_TRIGGER_PROFILES["default"]["fallback_topic"]:
+            fallback_topic = cfg.get("fallback_topic", fallback_topic)
+
+    if not merged_keywords:
+        return _RAG_TRIGGER_PROFILES["default"]
+
+    return {
+        "keywords": tuple(merged_keywords),
+        "topics": merged_topics,
+        "fallback_topic": fallback_topic,
+    }
 
 
 def find_project_root(start_path: Path | None = None) -> Path:
@@ -170,22 +447,27 @@ def _normalize_outline_text(outline: str) -> str:
     return text
 
 
-def _build_rag_query(outline: str, chapter_num: int, min_chars: int, max_chars: int) -> str:
+def _build_rag_query(
+    outline: str,
+    chapter_num: int,
+    min_chars: int,
+    max_chars: int,
+    genre: str = "",
+) -> str:
     plain = _normalize_outline_text(outline)
     if not plain or len(plain) < min_chars:
         return ""
 
-    if not any(keyword in plain for keyword in _RAG_TRIGGER_KEYWORDS):
+    config = _get_rag_trigger_config(genre)
+    keywords = config["keywords"]
+    if not any(keyword in plain for keyword in keywords):
         return ""
 
-    if "关系" in plain or "师徒" in plain or "敌对" in plain or "同盟" in plain:
-        topic = "人物关系与动机"
-    elif "地点" in plain or "势力" in plain:
-        topic = "地点势力与场景约束"
-    elif "伏笔" in plain or "线索" in plain or "回收" in plain:
-        topic = "伏笔与线索"
-    else:
-        topic = "剧情关键线索"
+    topic = config["fallback_topic"]
+    for keyword_tuple, topic_label in config["topics"]:
+        if any(kw in plain for kw in keyword_tuple):
+            topic = topic_label
+            break
 
     clean_max = max(40, int(max_chars))
     return f"第{chapter_num}章 {topic}：{plain[:clean_max]}"
@@ -272,7 +554,10 @@ def _load_rag_assist(project_root: Path, chapter_num: int, outline: str) -> Dict
         base_payload["reason"] = "disabled_by_config"
         return base_payload
 
-    query = _build_rag_query(outline, chapter_num=chapter_num, min_chars=min_chars, max_chars=max_chars)
+    genre = _load_genre_from_state(project_root)
+    query = _build_rag_query(
+        outline, chapter_num=chapter_num, min_chars=min_chars, max_chars=max_chars, genre=genre
+    )
     if not query:
         base_payload["reason"] = "outline_not_actionable"
         return base_payload
