@@ -167,19 +167,22 @@ def test_context_snapshot_invalidates_on_dependency_change(temp_project):
     }
     temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
+    # 写入初始偏好文件（属于快照依赖）
+    preferences_path = temp_project.webnovel_dir / "preferences.json"
+    preferences_path.write_text(json.dumps({"style": "爽文"}, ensure_ascii=False), encoding="utf-8")
+
     manager = ContextManager(temp_project)
 
     # 首次构建并保存快照
     payload1 = manager.build_context(1, template="plot", use_snapshot=True, save_snapshot=True)
-    assert payload1["sections"]["genre_profile"]["content"]["genre"] == "xuanhuan"
+    assert payload1["sections"]["preferences"]["content"]["style"] == "爽文"
 
-    # 修改 state.json（依赖文件发生变化）
-    state["project"]["genre"] = "dushi"
-    temp_project.state_file.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    # 修改 preferences.json（依赖文件发生变化）
+    preferences_path.write_text(json.dumps({"style": "悬疑"}, ensure_ascii=False), encoding="utf-8")
 
     # 再次构建，应检测到快照失效并重建
     payload2 = manager.build_context(1, template="plot", use_snapshot=True, save_snapshot=True)
-    assert payload2["sections"]["genre_profile"]["content"]["genre"] == "dushi"
+    assert payload2["sections"]["preferences"]["content"]["style"] == "悬疑"
 
 
 def test_context_manager_applies_ranker_and_contract_meta(temp_project):

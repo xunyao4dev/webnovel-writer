@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -539,6 +541,39 @@ def _search_with_rag(
     }
 
 
+_RAG_CACHE_TTL_SECONDS = 3600
+
+
+def _rag_cache_path(project_root: Path, chapter_num: int, query: str, top_k: int) -> Path:
+    """返回 RAG 查询缓存文件路径。"""
+    cache_dir = project_root / ".webnovel" / "tmp" / "rag_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = hashlib.md5(f"{chapter_num}:{top_k}:{query}".encode("utf-8")).hexdigest()
+    return cache_dir / f"ch{chapter_num:04d}_{key}.json"
+
+
+def _load_rag_cache(cache_path: Path) -> Dict[str, Any] | None:
+    if not cache_path.exists():
+        return None
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        if int(data.get("cached_at", 0)) + _RAG_CACHE_TTL_SECONDS < int(time.time()):
+            return None
+        return data.get("payload")
+    except Exception:
+        return None
+
+
+def _save_rag_cache(cache_path: Path, payload: Dict[str, Any]) -> None:
+    try:
+        cache_path.write_text(
+            json.dumps({"cached_at": int(time.time()), "payload": payload}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
 def _load_rag_assist(project_root: Path, chapter_num: int, outline: str) -> Dict[str, Any]:
     _ensure_scripts_path()
     from data_modules.config import DataModulesConfig
@@ -567,9 +602,17 @@ def _load_rag_assist(project_root: Path, chapter_num: int, outline: str) -> Dict
         base_payload["reason"] = "vector_db_missing_or_empty"
         return base_payload
 
+    cache_path = _rag_cache_path(project_root, chapter_num, query, top_k)
+    cached = _load_rag_cache(cache_path)
+    if cached is not None:
+        cached["enabled"] = True
+        cached["reason"] = cached.get("reason", "") or "cache_hit"
+        return cached
+
     try:
         rag_payload = _search_with_rag(project_root=project_root, chapter_num=chapter_num, query=query, top_k=top_k)
         rag_payload["enabled"] = True
+        _save_rag_cache(cache_path, rag_payload)
         return rag_payload
     except Exception as exc:
         base_payload["reason"] = f"rag_error:{exc.__class__.__name__}"

@@ -141,7 +141,7 @@ class EmbeddingAPIClient:
                         url,
                         json=payload,
                         headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=timeout)
+                        timeout=aiohttp.ClientTimeout(total=timeout, connect=min(30, timeout), sock_read=min(90, timeout))
                     ) as resp:
                         if resp.status == 200:
                             text = await resp.text()
@@ -340,7 +340,7 @@ class RerankAPIClient:
                         url,
                         json=payload,
                         headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=timeout)
+                        timeout=aiohttp.ClientTimeout(total=timeout, connect=min(30, timeout), sock_read=min(90, timeout))
                     ) as resp:
                         if resp.status == 200:
                             data = await resp.json()

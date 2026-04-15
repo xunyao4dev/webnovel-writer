@@ -108,17 +108,9 @@ class ContextManager:
         deps: Dict[str, Any] = {}
         project_root = self.config.project_root
 
-        # 核心状态文件
-        state_path = self.config.state_file
-        fp = self.snapshot_manager.file_fingerprint(state_path)
-        if fp:
-            deps[str(state_path)] = fp
-
-        # 索引数据库
-        index_path = self.config.index_db
-        fp = self.snapshot_manager.file_fingerprint(index_path)
-        if fp:
-            deps[str(index_path)] = fp
+        # 注意：state.json 与 index.db 在写作流程中会被 data-agent / review-agent 频繁修改，
+        # 加入依赖会导致 snapshot 几乎每次都会失效并强制重建，显著拖慢整体流程。
+        # 因此仅监控相对稳定的手动编辑文件：大纲、摘要、偏好、参考文档等。
 
         # 本章大纲文件
         try:
